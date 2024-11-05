@@ -14,47 +14,65 @@ from sklearn.linear_model import LogisticRegression
 import shap
 from sklearn.ensemble import RandomForestClassifier
 import time
+from tabulate import tabulate
 
-Path = "LA.csv"
+#this code follow notebook,https://www.kaggle.com/code/chandrimad31/rainfall-prediction-7-popular-models, instruction
+
+SanDiegoPath = "San Diego.csv"
+NYPath = "NY.csv"
 #"/Users/ringuyen/Desktop/rain forecast/dataset/NY.csv"
 
-Data = pd.read_csv(Path)
+SanDiegoData = pd.read_csv(SanDiegoPath)
+NYData = pd.read_csv(NYPath)
 #fig = plt.figure(figsize = (8,5))
 
 
-# plot to see original data have class imbalance
-# NYDataTest['Rain Tomorrow'].value_counts(normalize = True).plot(kind='bar', color= ['skyblue','navy'], alpha = 0.9, rot=0)
-# plt.title('RainTomorrow Indicator No(0) and Yes(1) in the Imbalanced Dataset')
-# plt.show()
+
 
 #handle imbalance by oversample positive case
-no = Data[Data['Rain Tomorrow'] == 0]
-yes = Data[Data['Rain Tomorrow'] == 1]
-yesOverSampled = resample(yes, replace=True, n_samples = len(no), random_state=123)
-overSample = pd.concat([no,yesOverSampled])
+def classimbalance(Data, Path):
+    # plot to see original data have class imbalance
+    Data['Rain Tomorrow'].value_counts(normalize = True).plot(kind='bar', color= ['skyblue','navy'], alpha = 0.9, rot=0)
+    plt.title('RainTomorrow Indicator No(0) and Yes(1) in ' + Path.replace(".csv",""))
+    plt.show()
 
-# plot to see oversample solve imbalance
-# overSample['Rain Tomorrow'].value_counts(normalize = True).plot(kind='bar', color= ['skyblue','navy'], alpha = 0.9, rot=0)
-# plt.title('RainTomorrow Indicator No(0) and Yes(1) in the Imbalanced Dataset')
-# plt.show()
+    no = Data[Data['Rain Tomorrow'] == 0]
+    yes = Data[Data['Rain Tomorrow'] == 1]
+    yesOverSampled = resample(yes, replace=True, n_samples = len(no), random_state=123)
+    overSample = pd.concat([no,yesOverSampled])
 
+    #plot to see oversample solve imbalance#
+    overSample['Rain Tomorrow'].value_counts(normalize = True).plot(kind='bar', color= ['skyblue','navy'], alpha = 0.9, rot=0)
+    plt.title('RainTomorrow Indicator No(0) and Yes(1) in ' + Path.replace(".csv",""))
+    plt.show()
+    return overSample
+
+overSampleSanDiego = classimbalance(SanDiegoData, SanDiegoPath)
+overSampleNY = classimbalance(NYData, NYPath)
 # There is no missing data so no need to impute
 # overSample.select_dtypes(include=['object']).columns
 # overSample['Date'] = overSample['Date'].fillna(overSample['Date'].mode()[0])
 # overSample['Location'] = overSample['Location'].fillna(overSample['Location'].mode()[0])
 
 #label encoding as data preprocessing
-lencoders = {}
-for col in overSample.select_dtypes(include=['object']).columns:
-    lencoders[col] = LabelEncoder()
-    overSample[col] = lencoders[col].fit_transform(overSample[col])
+def labelEncoding(data):
+    lencoders = {}
+    for col in data.select_dtypes(include=['object']).columns:
+        lencoders[col] = LabelEncoder()
+        data[col] = lencoders[col].fit_transform(data[col])
 
-Q1 = overSample.quantile(0.25)
-Q3 = overSample.quantile(0.75)
-IQR = Q3 - Q1
+labelEncoding(overSampleNY)
+labelEncoding(overSampleSanDiego)
 
-# remove outlier base on IQR
-overSample = overSample[~((overSample < (Q1 - 1.5 * IQR)) |(overSample > (Q3 + 1.5 * IQR))).any(axis=1)]
+def removeOutlier(data):
+    Q1 = data.quantile(0.25)
+    Q3 = data.quantile(0.75)
+    IQR = Q3 - Q1
+    print(data.shape)
+    # remove outlier base on IQR
+    data = data[~((data < (Q1 - 1.5 * IQR)) |(data > (Q3 + 1.5 * IQR))).any(axis=1)]
+    print(data.shape)
+removeOutlier(overSampleNY)
 
 # heatmap for corelation
 # corr = overSample.corr()
@@ -64,25 +82,24 @@ overSample = overSample[~((overSample < (Q1 - 1.5 * IQR)) |(overSample > (Q3 + 1
 # sns.heatmap(corr, mask=mask, cmap=cmap, vmax=None, center=0,square=True, annot=True, linewidths=.5, cbar_kws={"shrink": .9})
 # plt.show()
 
-features = overSample[['Date','Location', 'Temperature','Humidity','Wind Speed','Precipitation','Cloud Cover','Pressure']]
-target = overSample['Rain Tomorrow']
+features = overSampleNY[['Date','Location', 'Temperature','Humidity','Wind Speed','Precipitation','Cloud Cover','Pressure']]
+target = overSampleNY['Rain Tomorrow']
 
 X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.3, random_state=1)
-# Normalize by MinMaxScaler
-# X_train = MinMaxScaler().fit_transform(X_train)
-# X_test = MinMaxScaler().fit_transform(X_test)
+#Normalize by MinMaxScaler
+X_train = MinMaxScaler().fit_transform(X_train)
+X_test = MinMaxScaler().fit_transform(X_test)
 
-def plot_roc_cur(fper, tper):  
+def plotRoc(fper, tper):  
     plt.plot(fper, tper, color='orange', label='ROC')
     plt.plot([0, 1], [0, 1], color='darkblue', linestyle='--')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title('Receiver Operating Characteristic (ROC) Curve')
+    plt.title('ROC Curve')
     plt.legend()
     plt.show()
 
-def run_model(model, X_train, y_train, X_test, y_test, verbose=True):
-    t0=time.time()
+def runModel(model, X_train, y_train, X_test, y_test, verbose=True):
     if verbose == False:
         model.fit(X_train,y_train, verbose=0)
     else:
@@ -90,27 +107,24 @@ def run_model(model, X_train, y_train, X_test, y_test, verbose=True):
     y_pred = model.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
     roc_auc = roc_auc_score(y_test, y_pred) 
-    coh_kap = cohen_kappa_score(y_test, y_pred)
-    time_taken = time.time()-t0
+    
     print("Accuracy = {}".format(accuracy))
     print("ROC Area under Curve = {}".format(roc_auc))
-    print("Cohen's Kappa = {}".format(coh_kap))
-    print("Time taken = {}".format(time_taken))
     print(classification_report(y_test,y_pred,digits=5))
     
     probs = model.predict_proba(X_test)  
     probs = probs[:, 1]  
     fper, tper, thresholds = roc_curve(y_test, probs) 
-    plot_roc_cur(fper, tper)
+    plotRoc(fper, tper)
 
     ConfusionMatrixDisplay.from_estimator(model, X_test, y_test,cmap=plt.cm.Blues, normalize = 'all')
     plt.show()
-    return model, accuracy, roc_auc, coh_kap, time_taken
+    return model, accuracy, roc_auc
 
-#params_lr = {'penalty': 'l1', 'solver':'liblinear'}
+params_lr = {'penalty': 'l1', 'solver':'liblinear'}
 
-# model_lr = LogisticRegression(**params_lr)
-# model_lr, accuracy_lr, roc_auc_lr, coh_kap_lr, tt_lr = run_model(model_lr, X_train, y_train, X_test, y_test)
+model_lr = LogisticRegression(**params_lr)
+model_lr, accuracy_lr, roc_auc_lr = runModel(model_lr, X_train, y_train, X_test, y_test)
 # shap.initjs()
 
 # params_rf = {'max_depth': 16,
@@ -119,14 +133,14 @@ def run_model(model, X_train, y_train, X_test, y_test, verbose=True):
 #              'n_estimators': 100,
 #              'random_state': 12345}
 
-params_xgb ={'n_estimators': 500,
-            'max_depth': 16}
+# params_xgb ={'n_estimators': 500,
+#             'max_depth': 16}
 
-model_xgb = xgb.XGBClassifier(**params_xgb)
-model_xgb, accuracy_xgb, roc_auc_xgb, coh_kap_xgb, tt_xgb = run_model(model_xgb, X_train, y_train, X_test, y_test)
+# model_xgb = xgb.XGBClassifier(**params_xgb)
+# model_xgb, accuracy_xgb, roc_auc_xgb, coh_kap_xgb, tt_xgb = run_model(model_xgb, X_train, y_train, X_test, y_test)
 
-explainer = shap.TreeExplainer(model_xgb, X_test)
-shap_values = explainer(X_test)
+# explainer = shap.TreeExplainer(model_xgb, X_test)
+# shap_values = explainer(X_test)
 
-shap.plots.bar(shap_values)
+# shap.plots.bar(shap_values)
 

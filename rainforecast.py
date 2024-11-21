@@ -8,17 +8,17 @@ from sklearn.impute import IterativeImputer
 from sklearn.preprocessing import LabelEncoder
 import seaborn as sns
 from sklearn.model_selection import train_test_split
-# import xgboost as xgb
+import xgboost as xgb
 from sklearn.metrics import accuracy_score, roc_auc_score, cohen_kappa_score, ConfusionMatrixDisplay, roc_curve, classification_report
 from sklearn.linear_model import LogisticRegression
-# import shap
+import shap
 from sklearn.ensemble import RandomForestClassifier
 import time
-# from tabulate import tabulate
+from tabulate import tabulate
+from lime.lime_tabular import LimeTabularExplainer
 
 #this code follow notebook,https://www.kaggle.com/code/chandrimad31/rainfall-prediction-7-popular-models, instruction
 
-# Load Data 
 SanDiegoPath = "San Diego.csv"
 NYPath = "NY.csv"
 #"/Users/ringuyen/Desktop/rain forecast/dataset/NY.csv"
@@ -50,6 +50,7 @@ def classimbalance(Data, Path):
 
 overSampleSanDiego = classimbalance(SanDiegoData, SanDiegoPath)
 overSampleNY = classimbalance(NYData, NYPath)
+
 # There is no missing data so no need to impute
 # overSample.select_dtypes(include=['object']).columns
 # overSample['Date'] = overSample['Date'].fillna(overSample['Date'].mode()[0])
@@ -57,9 +58,10 @@ overSampleNY = classimbalance(NYData, NYPath)
 
 #label encoding as data preprocessing
 def labelEncoding(data):
+    lencoders = {}
     for col in data.select_dtypes(include=['object']).columns:
-        le = LabelEncoder()
-        data[col] = le.fit_transform(data[col])
+        lencoders[col] = LabelEncoder()
+        data[col] = lencoders[col].fit_transform(data[col])
 
 labelEncoding(overSampleNY)
 labelEncoding(overSampleSanDiego)
@@ -72,28 +74,26 @@ def removeOutlier(data):
     # remove outlier base on IQR
     data = data[~((data < (Q1 - 1.5 * IQR)) |(data > (Q3 + 1.5 * IQR))).any(axis=1)]
     print(data.shape)
-    return data 
-overSampleNY = removeOutlier(overSampleNY)
-overSampleSanDiego = removeOutlier(overSampleSanDiego)
+removeOutlier(overSampleNY)
 
 # heatmap for corelation
-# corr = overSample.corr()
-# mask = np.triu(np.ones_like(corr, dtype=np.bool))
-# f, ax = plt.subplots(figsize=(20, 20))
-# cmap = sns.diverging_palette(250, 25, as_cmap=True)
-# sns.heatmap(corr, mask=mask, cmap=cmap, vmax=None, center=0,square=True, annot=True, linewidths=.5, cbar_kws={"shrink": .9})
-# plt.show()
+def heatMapCorr(data):
+    corr = data.corr()
+    mask = np.triu(np.ones_like(corr, dtype=np.bool))
+    f, ax = plt.subplots(figsize=(20, 20))
+    cmap = sns.diverging_palette(250, 25, as_cmap=True)
+    sns.heatmap(corr, mask=mask, cmap=cmap, vmax=None, center=0,square=True, annot=True, linewidths=.5, cbar_kws={"shrink": .9})
+    plt.show()
+heatMapCorr(overSampleNY)
 
 features = overSampleNY[['Date','Location', 'Temperature','Humidity','Wind Speed','Precipitation','Cloud Cover','Pressure']]
 target = overSampleNY['Rain Tomorrow']
 
 X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.3, random_state=1)
 #Normalize by MinMaxScaler
-scaler = MinMaxScaler()
 X_train = MinMaxScaler().fit_transform(X_train)
 X_test = MinMaxScaler().fit_transform(X_test)
 
-# Function to plot ROC curve
 def plotRoc(fper, tper):  
     plt.plot(fper, tper, color='orange', label='ROC')
     plt.plot([0, 1], [0, 1], color='darkblue', linestyle='--')
@@ -103,37 +103,32 @@ def plotRoc(fper, tper):
     plt.legend()
     plt.show()
 
-# General function to train and evaluate models
-def runModel(model, X_train, y_train, X_test, y_test):
-    model.fit(X_train, y_train)
+def runModel(model, X_train, y_train, X_test, y_test, verbose=True):
+    if verbose == False:
+        model.fit(X_train,y_train, verbose=0)
+    else:
+        model.fit(X_train,y_train)
     y_pred = model.predict(X_test)
-    
     accuracy = accuracy_score(y_test, y_pred)
-    roc_auc = roc_auc_score(y_test, y_pred)
+    roc_auc = roc_auc_score(y_test, y_pred) 
     
-    print("Accuracy:", accuracy)
-    print("ROC-AUC:", roc_auc)
-    print(classification_report(y_test, y_pred))
+    print("Accuracy = {}".format(accuracy))
+    print("ROC Area under Curve = {}".format(roc_auc))
+    print(classification_report(y_test,y_pred,digits=5))
     
-    probs = model.predict_proba(X_test)[:, 1]
-    fper, tper, _ = roc_curve(y_test, probs)
+    probs = model.predict_proba(X_test)  
+    probs = probs[:, 1]  
+    fper, tper, thresholds = roc_curve(y_test, probs) 
     plotRoc(fper, tper)
-    
-    ConfusionMatrixDisplay.from_estimator(model, X_test, y_test, cmap=plt.cm.Blues, normalize='all')
+
+    ConfusionMatrixDisplay.from_estimator(model, X_test, y_test,cmap=plt.cm.Blues, normalize = 'all')
     plt.show()
     return model, accuracy, roc_auc
 
 # params_lr = {'penalty': 'l1', 'solver':'liblinear'}
 
-# Run Logistic Regression
-print("Logistic Regression:")
-model_lr = LogisticRegression(penalty='l1', solver='liblinear')
-model_lr, accuracy_lr, roc_auc_lr = runModel(model_lr, X_train, y_train, X_test, y_test)
-
-# Run Random Forest Classifier
-print("Random Forest Classifier:")
-model_rf = RandomForestClassifier(n_estimators=100, max_depth=16, random_state=12345)
-model_rf, accuracy_rf, roc_auc_rf = runModel(model_rf, X_train, y_train, X_test, y_test)
+# model_lr = LogisticRegression(**params_lr)
+# model_lr, accuracy_lr, roc_auc_lr = runModel(model_lr, X_train, y_train, X_test, y_test)
 # shap.initjs()
 
 # params_rf = {'max_depth': 16,
@@ -142,16 +137,29 @@ model_rf, accuracy_rf, roc_auc_rf = runModel(model_rf, X_train, y_train, X_test,
 #              'n_estimators': 100,
 #              'random_state': 12345}
 
-# params_xgb ={'n_estimators': 500,
-#             'max_depth': 16}
+params_xgb ={'n_estimators': 500,
+            'max_depth': 16}
 
-# model_xgb = xgb.XGBClassifier(**params_xgb)
-# model_xgb, accuracy_xgb, roc_auc_xgb, coh_kap_xgb, tt_xgb = run_model(model_xgb, X_train, y_train, X_test, y_test)
+model_xgb = xgb.XGBClassifier(**params_xgb)
+model_xgb, accuracy, roc_auc = runModel(model_xgb,X_train,y_train,X_test,y_test)
 
 # explainer = shap.TreeExplainer(model_xgb, X_test)
 # shap_values = explainer(X_test)
 
-# shap.plots.bar(shap_values)
+# shap.summary_plot(shap_values,features, plot_type="bar")
 
-
-# %%
+# class_names = ['rain tomorrow', 'No rain tomorrow']
+# feature_names = ['Date','Location', 'Temperature','Humidity','Wind Speed','Precipitation','Cloud Cover','Pressure']
+# explainer = LimeTabularExplainer(X_train, feature_names =     
+#                                  feature_names,
+#                                  class_names = class_names, 
+#                                  mode = 'classification')
+# for i in range(20):
+#     explaination = explainer.explain_instance(
+#         data_row=X_test[i],
+#         predict_fn=model_xgb.predict_proba,
+#         num_features=30
+#     )
+# fig = explaination.as_pyplot_figure()
+# plt.tight_layout()
+# plt.show()

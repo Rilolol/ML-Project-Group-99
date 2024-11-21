@@ -125,24 +125,38 @@ def runModel(model, X_train, y_train, X_test, y_test, verbose=True):
     plt.show()
     return model, accuracy, roc_auc
 
-# params_lr = {'penalty': 'l1', 'solver':'liblinear'}
+params_lr = {'penalty': 'l1', 'solver':'liblinear'}
 
-# model_lr = LogisticRegression(**params_lr)
-# model_lr, accuracy_lr, roc_auc_lr = runModel(model_lr, X_train, y_train, X_test, y_test)
-# shap.initjs()
+model_lr = LogisticRegression(**params_lr)
+model_lr, accuracy_lr, roc_auc_lr = runModel(model_lr, X_train, y_train, X_test, y_test)
 
-# params_rf = {'max_depth': 16,
-#              'min_samples_leaf': 1,
-#              'min_samples_split': 2,
-#              'n_estimators': 100,
-#              'random_state': 12345}
+params_rf = {'max_depth': 16,
+             'min_samples_leaf': 1,
+             'min_samples_split': 2,
+             'n_estimators': 100,
+             'random_state': 12345}
+
+model_rf = RandomForestClassifier(**params_rf)
+model_rf, accuracy_rf, roc_auc_rf = runModel(model_rf, X_train, y_train, X_test, y_test)
 
 params_xgb ={'n_estimators': 500,
             'max_depth': 16}
 
 model_xgb = xgb.XGBClassifier(**params_xgb)
-model_xgb, accuracy, roc_auc = runModel(model_xgb,X_train,y_train,X_test,y_test)
+model_xgb, accuracy_xgb, roc_auc_xgb = runModel(model_xgb,X_train,y_train,X_test,y_test)
 
+accuracy_scores = [accuracy_lr, accuracy_rf, accuracy_xgb]
+roc_auc_scores = [roc_auc_lr, roc_auc_rf, roc_auc_xgb]
+
+dataFrame = {'Model':['Logistic Regression', 'Random Forest', 'XGBoost']
+                    ,'Accuracy':accuracy_scores
+                    ,'Roc_Auc':roc_auc_scores}
+dataFrame = pd.DataFrame(dataFrame)
+
+sns.barplot(dataFrame, x='Model', y='Accuracy',palette='summer')
+plt.show()
+sns.barplot(dataFrame, x='Model', y='Roc_Auc',palette='summer')
+plt.show()
 # explainer = shap.TreeExplainer(model_xgb, X_test)
 # shap_values = explainer(X_test)
 

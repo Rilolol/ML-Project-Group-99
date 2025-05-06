@@ -8,3 +8,14 @@
 
 /ML-Project-Group-99/data.csv - data set of the project
 
+# Dependencies
+numpy
+pandas
+pytorch
+matplotlib
+sklearn
+seaborn
+xgboost
+shap 
+tabulate 
+lime
